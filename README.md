@@ -175,5 +175,3 @@ PI = 3
 
 
 \* These measurements were made with `Node.js v16.14` on an Intel Kaby Lake desktop CPU. Source code is [here](https://github.com/Daninet/gmp-wasm/blob/master/benchmark/calcpi.js).
-
-.
