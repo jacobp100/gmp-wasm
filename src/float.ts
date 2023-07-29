@@ -1,13 +1,19 @@
-import { mpfr_rnd_t } from './bindingTypes';
-import { GMPFunctions } from './functions';
-import { Integer } from './integer';
-import { Rational } from './rational';
-import { assertInt32, assertUint32, assertValidRadix, FLOAT_SPECIAL_VALUES, isInt32 } from './util';
+import { mpfr_rnd_t } from "./bindingTypes";
+import { Integer } from "./integer";
+import { Rational } from "./rational";
+import {
+  assertInt32,
+  assertUint32,
+  assertValidRadix,
+  FLOAT_SPECIAL_VALUES,
+  isInt32,
+} from "./util";
+import type { WasmInstance } from "./wasmInstance";
 
-type FloatFactoryReturn = ReturnType<typeof getFloatContext>['Float'];
-export interface FloatFactory extends FloatFactoryReturn {};
+type FloatFactoryReturn = ReturnType<typeof getFloatContext>["Float"];
+export interface FloatFactory extends FloatFactoryReturn {}
 type FloatReturn = ReturnType<FloatFactoryReturn>;
-export interface Float extends FloatReturn {};
+export interface Float extends FloatReturn {}
 
 // these should not be exported
 type AllTypes = Integer | Rational | Float | string | number;
@@ -29,23 +35,27 @@ export enum FloatRoundingMode {
   // ROUND_FAITHFUL = 5,
   // /** (Experimental) Round to nearest, with ties away from zero. MPFR_RNDNA */
   // ROUND_TO_NEAREST_AWAY_FROM_ZERO = -1,
-};
+}
 export interface FloatOptions {
   precisionBits?: number;
   roundingMode?: FloatRoundingMode;
   radix?: number;
-};
+}
 
-const INVALID_PARAMETER_ERROR = 'Invalid parameter!';
+const INVALID_PARAMETER_ERROR = "Invalid parameter!";
 
-export function getFloatContext(gmp: GMPFunctions, ctx: any, ctxOptions?: FloatOptions) {
-  const mpfr_t_arr: number[] = [];
+export function getFloatContext(
+  gmp: WasmInstance,
+  ctx: any,
+  ctxOptions?: FloatOptions
+) {
+  const isInteger = (val: any): val is Integer => ctx.intContext.isInteger(val);
+  const isRational = (val: any): val is Rational =>
+    ctx.rationalContext.isRational(val);
+  const isFloat = (val: any): val is Float => ctx.floatContext.isFloat(val);
 
-  const isInteger = (val): boolean => ctx.intContext.isInteger(val);
-  const isRational = (val): boolean => ctx.rationalContext.isRational(val);
-  const isFloat = (val): boolean => ctx.floatContext.isFloat(val);
-
-  const globalRndMode = (ctxOptions.roundingMode ?? FloatRoundingMode.ROUND_NEAREST) as number as mpfr_rnd_t;
+  const globalRndMode = (ctxOptions.roundingMode ??
+    FloatRoundingMode.ROUND_NEAREST) as number as mpfr_rnd_t;
   const globalPrecisionBits = ctxOptions.precisionBits ?? 53; // double precision by default
   const globalRadix = ctxOptions.radix ?? 10;
 
@@ -53,33 +63,39 @@ export function getFloatContext(gmp: GMPFunctions, ctx: any, ctxOptions?: FloatO
   assertValidRadix(globalRadix);
 
   const compare = (mpfr_t: number, val: AllTypes): number => {
-    if (typeof val === 'number') {
+    if (typeof val === "number") {
       assertInt32(val);
       return gmp.mpfr_cmp_si(mpfr_t, val);
     }
-    if (typeof val === 'string') {
+    if (typeof val === "string") {
       const f = FloatFn(val, ctxOptions);
       return gmp.mpfr_cmp(mpfr_t, f.mpfr_t);
     }
     if (isInteger(val)) {
-      return gmp.mpfr_cmp_z(mpfr_t, (val as Integer).mpz_t);
+      return gmp.mpfr_cmp_z(mpfr_t, val.mpz_t);
     }
     if (isRational(val)) {
-      return gmp.mpfr_cmp_q(mpfr_t, (val as Rational).mpq_t);
+      return gmp.mpfr_cmp_q(mpfr_t, val.mpq_t);
     }
     if (isFloat(val)) {
-      return gmp.mpfr_cmp(mpfr_t, (val as Float).mpfr_t);
+      return gmp.mpfr_cmp(mpfr_t, val.mpfr_t);
     }
     throw new Error(INVALID_PARAMETER_ERROR);
-  }
+  };
 
-  const mergeFloatOptions = (options1: FloatOptions, options2: FloatOptions): FloatOptions => {
+  const mergeFloatOptions = (
+    options1: FloatOptions,
+    options2: FloatOptions
+  ): FloatOptions => {
     const precisionBits1 = options1?.precisionBits ?? globalPrecisionBits;
     const precisionBits2 = options2?.precisionBits ?? globalPrecisionBits;
 
     return {
       precisionBits: Math.max(precisionBits1, precisionBits2),
-      roundingMode: options2?.roundingMode ?? options1.roundingMode ?? ctxOptions.roundingMode,
+      roundingMode:
+        options2?.roundingMode ??
+        options1.roundingMode ??
+        ctxOptions.roundingMode,
       radix: options2?.radix ?? options1.radix ?? ctxOptions.radix,
     };
   };
@@ -89,7 +105,7 @@ export function getFloatContext(gmp: GMPFunctions, ctx: any, ctxOptions?: FloatO
     precisionBits: -1,
     rndMode: -1,
     radix: -1,
-    type: 'float',
+    type: "float",
 
     get options(): FloatOptions {
       return {
@@ -109,29 +125,32 @@ export function getFloatContext(gmp: GMPFunctions, ctx: any, ctxOptions?: FloatO
 
     /** Returns the sum of this number and the given one. */
     add(val: AllTypes): Float {
-      if (typeof val === 'number') {
+      if (typeof val === "number") {
         const n = FloatFn(null, this.options);
         gmp.mpfr_add_d(n.mpfr_t, this.mpfr_t, val, this.rndMode);
         return n;
       }
-      if (typeof val === 'string') {
+      if (typeof val === "string") {
         const n = FloatFn(val, this.options);
         gmp.mpfr_add(n.mpfr_t, this.mpfr_t, n.mpfr_t, this.rndMode);
         return n;
       }
       if (isFloat(val)) {
-        const n = FloatFn(null, mergeFloatOptions(this.setOptions, (val as Float).setOptions));
-        gmp.mpfr_add(n.mpfr_t, this.mpfr_t, (val as Float).mpfr_t, this.rndMode);
+        const n = FloatFn(
+          null,
+          mergeFloatOptions(this.setOptions, val.setOptions)
+        );
+        gmp.mpfr_add(n.mpfr_t, this.mpfr_t, val.mpfr_t, this.rndMode);
         return n;
       }
       if (isRational(val)) {
         const n = FloatFn(null, this.options);
-        gmp.mpfr_add_q(n.mpfr_t, this.mpfr_t, (val as Rational).mpq_t, this.rndMode);
+        gmp.mpfr_add_q(n.mpfr_t, this.mpfr_t, val.mpq_t, this.rndMode);
         return n;
       }
       if (isInteger(val)) {
         const n = FloatFn(null, this.options);
-        gmp.mpfr_add_z(n.mpfr_t, this.mpfr_t, (val as Integer).mpz_t, this.rndMode);
+        gmp.mpfr_add_z(n.mpfr_t, this.mpfr_t, val.mpz_t, this.rndMode);
         return n;
       }
       throw new Error(INVALID_PARAMETER_ERROR);
@@ -139,29 +158,32 @@ export function getFloatContext(gmp: GMPFunctions, ctx: any, ctxOptions?: FloatO
 
     /** Returns the difference of this number and the given one. */
     sub(val: AllTypes): Float {
-      if (typeof val === 'number') {
+      if (typeof val === "number") {
         const n = FloatFn(null, this.options);
         gmp.mpfr_sub_d(n.mpfr_t, this.mpfr_t, val, this.rndMode);
         return n;
       }
-      if (typeof val === 'string') {
+      if (typeof val === "string") {
         const n = FloatFn(val, this.options);
         gmp.mpfr_sub(n.mpfr_t, this.mpfr_t, n.mpfr_t, this.rndMode);
         return n;
       }
       if (isFloat(val)) {
-        const n = FloatFn(null, mergeFloatOptions(this.setOptions, (val as Float).setOptions));
-        gmp.mpfr_sub(n.mpfr_t, this.mpfr_t, (val as Float).mpfr_t, this.rndMode);
+        const n = FloatFn(
+          null,
+          mergeFloatOptions(this.setOptions, val.setOptions)
+        );
+        gmp.mpfr_sub(n.mpfr_t, this.mpfr_t, val.mpfr_t, this.rndMode);
         return n;
       }
       if (isRational(val)) {
         const n = FloatFn(null, this.options);
-        gmp.mpfr_sub_q(n.mpfr_t, this.mpfr_t, (val as Rational).mpq_t, this.rndMode);
+        gmp.mpfr_sub_q(n.mpfr_t, this.mpfr_t, val.mpq_t, this.rndMode);
         return n;
       }
       if (isInteger(val)) {
         const n = FloatFn(null, this.options);
-        gmp.mpfr_sub_z(n.mpfr_t, this.mpfr_t, (val as Integer).mpz_t, this.rndMode);
+        gmp.mpfr_sub_z(n.mpfr_t, this.mpfr_t, val.mpz_t, this.rndMode);
         return n;
       }
       throw new Error(INVALID_PARAMETER_ERROR);
@@ -169,7 +191,7 @@ export function getFloatContext(gmp: GMPFunctions, ctx: any, ctxOptions?: FloatO
 
     /** Returns the product of this number and the given one. */
     mul(val: AllTypes): Float {
-      if (typeof val === 'number') {
+      if (typeof val === "number") {
         const n = FloatFn(null, this.options);
         if (isInt32(val)) {
           gmp.mpfr_mul_si(n.mpfr_t, this.mpfr_t, val, this.rndMode);
@@ -178,24 +200,27 @@ export function getFloatContext(gmp: GMPFunctions, ctx: any, ctxOptions?: FloatO
         }
         return n;
       }
-      if (typeof val === 'string') {
+      if (typeof val === "string") {
         const n = FloatFn(val, this.options);
         gmp.mpfr_mul(n.mpfr_t, this.mpfr_t, n.mpfr_t, this.rndMode);
         return n;
       }
       if (isFloat(val)) {
-        const n = FloatFn(null, mergeFloatOptions(this.setOptions, (val as Float).setOptions));
-        gmp.mpfr_mul(n.mpfr_t, this.mpfr_t, (val as Float).mpfr_t, this.rndMode);
+        const n = FloatFn(
+          null,
+          mergeFloatOptions(this.setOptions, val.setOptions)
+        );
+        gmp.mpfr_mul(n.mpfr_t, this.mpfr_t, val.mpfr_t, this.rndMode);
         return n;
       }
       if (isRational(val)) {
         const n = FloatFn(null, this.options);
-        gmp.mpfr_mul_q(n.mpfr_t, this.mpfr_t, (val as Rational).mpq_t, this.rndMode);
+        gmp.mpfr_mul_q(n.mpfr_t, this.mpfr_t, val.mpq_t, this.rndMode);
         return n;
       }
       if (isInteger(val)) {
         const n = FloatFn(null, this.options);
-        gmp.mpfr_mul_z(n.mpfr_t, this.mpfr_t, (val as Integer).mpz_t, this.rndMode);
+        gmp.mpfr_mul_z(n.mpfr_t, this.mpfr_t, val.mpz_t, this.rndMode);
         return n;
       }
       throw new Error(INVALID_PARAMETER_ERROR);
@@ -203,29 +228,32 @@ export function getFloatContext(gmp: GMPFunctions, ctx: any, ctxOptions?: FloatO
 
     /** Returns the result of the division of this number by the given one. */
     div(val: AllTypes): Float {
-      if (typeof val === 'number') {
+      if (typeof val === "number") {
         const n = FloatFn(null, this.options);
         gmp.mpfr_div_d(n.mpfr_t, this.mpfr_t, val, this.rndMode);
         return n;
       }
-      if (typeof val === 'string') {
+      if (typeof val === "string") {
         const n = FloatFn(val, this.options);
         gmp.mpfr_div(n.mpfr_t, this.mpfr_t, n.mpfr_t, this.rndMode);
         return n;
       }
       if (isFloat(val)) {
-        const n = FloatFn(null, mergeFloatOptions(this.setOptions, (val as Float).setOptions));
-        gmp.mpfr_div(n.mpfr_t, this.mpfr_t, (val as Float).mpfr_t, this.rndMode);
+        const n = FloatFn(
+          null,
+          mergeFloatOptions(this.setOptions, val.setOptions)
+        );
+        gmp.mpfr_div(n.mpfr_t, this.mpfr_t, val.mpfr_t, this.rndMode);
         return n;
       }
       if (isRational(val)) {
         const n = FloatFn(null, this.options);
-        gmp.mpfr_div_q(n.mpfr_t, this.mpfr_t, (val as Rational).mpq_t, this.rndMode);
+        gmp.mpfr_div_q(n.mpfr_t, this.mpfr_t, val.mpq_t, this.rndMode);
         return n;
       }
       if (isInteger(val)) {
         const n = FloatFn(null, this.options);
-        gmp.mpfr_div_z(n.mpfr_t, this.mpfr_t, (val as Integer).mpz_t, this.rndMode);
+        gmp.mpfr_div_z(n.mpfr_t, this.mpfr_t, val.mpz_t, this.rndMode);
         return n;
       }
       throw new Error(INVALID_PARAMETER_ERROR);
@@ -278,7 +306,7 @@ export function getFloatContext(gmp: GMPFunctions, ctx: any, ctxOptions?: FloatO
     factorial(): Float {
       const n = FloatFn(null, this.options);
       if (gmp.mpfr_fits_uint_p(this.mpfr_t, this.rndMode) === 0) {
-        throw new Error('Invalid value for factorial()');
+        throw new Error("Invalid value for factorial()");
       }
       const value = gmp.mpfr_get_ui(this.mpfr_t, this.rndMode);
       gmp.mpfr_fac_ui(n.mpfr_t, value, this.rndMode);
@@ -324,17 +352,17 @@ export function getFloatContext(gmp: GMPFunctions, ctx: any, ctxOptions?: FloatO
     lessThan(val: AllTypes): boolean {
       return compare(this.mpfr_t, val) < 0;
     },
-    
+
     /** Returns true if the current number is less than or equal to the provided number */
     lessOrEqual(val: AllTypes): boolean {
       return compare(this.mpfr_t, val) <= 0;
     },
-    
+
     /** Returns true if the current number is greater than the provided number */
     greaterThan(val: AllTypes): boolean {
       return compare(this.mpfr_t, val) > 0;
     },
-    
+
     /** Returns true if the current number is greater than or equal to the provided number */
     greaterOrEqual(val: AllTypes): boolean {
       return compare(this.mpfr_t, val) >= 0;
@@ -385,11 +413,16 @@ export function getFloatContext(gmp: GMPFunctions, ctx: any, ctxOptions?: FloatO
     /** Returns this number exponentiated to the given value. */
     pow(val: Float | number): Float {
       const n = FloatFn(null, this.options);
-      if (typeof val === 'number') {
+      if (typeof val === "number") {
         if (isInt32(val)) {
           gmp.mpfr_pow_si(n.mpfr_t, this.mpfr_t, val, this.rndMode);
         } else {
-          gmp.mpfr_pow(n.mpfr_t, this.mpfr_t, FloatFn(val).mpfr_t, this.rndMode);
+          gmp.mpfr_pow(
+            n.mpfr_t,
+            this.mpfr_t,
+            FloatFn(val).mpfr_t,
+            this.rndMode
+          );
         }
       } else {
         gmp.mpfr_pow(n.mpfr_t, this.mpfr_t, val.mpfr_t, this.rndMode);
@@ -433,7 +466,7 @@ export function getFloatContext(gmp: GMPFunctions, ctx: any, ctxOptions?: FloatO
     },
 
     /** Returns the cotangent */
-    cot(): Float{
+    cot(): Float {
       const n = FloatFn(null, this.options);
       gmp.mpfr_cot(n.mpfr_t, this.mpfr_t, this.rndMode);
       return n;
@@ -561,10 +594,10 @@ export function getFloatContext(gmp: GMPFunctions, ctx: any, ctxOptions?: FloatO
     /** Calculate the value of the Beta function */
     beta(op2: Float): Float {
       if (!isFloat(op2)) {
-        throw new Error('Only floats parameters are supported!');
+        throw new Error("Only floats parameters are supported!");
       }
       const n = FloatFn(null, this.options);
-      gmp.mpfr_beta(n.mpfr_t, this.mpfr_t, (op2 as Float).mpfr_t, this.rndMode);
+      gmp.mpfr_beta(n.mpfr_t, this.mpfr_t, op2.mpfr_t, this.rndMode);
       return n;
     },
 
@@ -636,10 +669,10 @@ export function getFloatContext(gmp: GMPFunctions, ctx: any, ctxOptions?: FloatO
     /** Calculate the arithmetic-geometric mean */
     agm(op2: Float): Float {
       if (!isFloat(op2)) {
-        throw new Error('Only floats parameters are supported!');
+        throw new Error("Only floats parameters are supported!");
       }
       const n = FloatFn(null, this.options);
-      gmp.mpfr_agm(n.mpfr_t, this.mpfr_t, (op2 as Float).mpfr_t, this.rndMode);
+      gmp.mpfr_agm(n.mpfr_t, this.mpfr_t, op2.mpfr_t, this.rndMode);
       return n;
     },
 
@@ -713,20 +746,20 @@ export function getFloatContext(gmp: GMPFunctions, ctx: any, ctxOptions?: FloatO
     /** Calculate the value of x - ny, where n is the integer quotient of x divided by y; n is rounded toward zero */
     fmod(y: Float): Float {
       if (!isFloat(y)) {
-        throw new Error('Only floats parameters are supported!');
+        throw new Error("Only floats parameters are supported!");
       }
       const n = FloatFn(null, this.options);
-      gmp.mpfr_fmod(n.mpfr_t, this.mpfr_t, (y as Float).mpfr_t, this.rndMode);
+      gmp.mpfr_fmod(n.mpfr_t, this.mpfr_t, y.mpfr_t, this.rndMode);
       return n;
     },
 
     /** Calculate the value of x - ny, where n is the integer quotient of x divided by y; n is rounded to the nearest integer (ties rounded to even) */
     remainder(y: Float): Float {
       if (!isFloat(y)) {
-        throw new Error('Only floats parameters are supported!');
+        throw new Error("Only floats parameters are supported!");
       }
       const n = FloatFn(null, this.options);
-      gmp.mpfr_remainder(n.mpfr_t, this.mpfr_t, (y as Float).mpfr_t, this.rndMode);
+      gmp.mpfr_remainder(n.mpfr_t, this.mpfr_t, y.mpfr_t, this.rndMode);
       return n;
     },
 
@@ -755,7 +788,12 @@ export function getFloatContext(gmp: GMPFunctions, ctx: any, ctxOptions?: FloatO
       radix = radix ?? this.options.radix;
       assertValidRadix(radix);
 
-      const str = gmp.mpfr_to_string(this.mpfr_t, radix, this.rndMode, truncate);
+      const str = gmp.mpfr_to_string(
+        this.mpfr_t,
+        radix,
+        this.rndMode,
+        truncate
+      );
       return str;
     },
 
@@ -786,9 +824,12 @@ export function getFloatContext(gmp: GMPFunctions, ctx: any, ctxOptions?: FloatO
       const isNegative = int.sign() === -1;
       let intStr = int.abs().toString(radix);
       if (intStr.length < digits + 1) {
-        intStr = '0'.repeat(digits + 1 - intStr.length) + intStr;
+        intStr = "0".repeat(digits + 1 - intStr.length) + intStr;
       }
-      return `${isNegative ? '-' : ''}${intStr.slice(0, -digits)}.${intStr.slice(-digits)}`;
+      return `${isNegative ? "-" : ""}${intStr.slice(
+        0,
+        -digits
+      )}.${intStr.slice(-digits)}`;
     },
 
     /** Converts the number to an integer */
@@ -802,15 +843,20 @@ export function getFloatContext(gmp: GMPFunctions, ctx: any, ctxOptions?: FloatO
     },
   };
 
-  const setValue = (mpfr_t: number, rndMode: mpfr_rnd_t, radix: number, val: string | number | Float | Rational | Integer) => {
-    if (typeof val === 'string') {
-      const res =  gmp.mpfr_set_string(mpfr_t, val, radix, rndMode);
+  const setValue = (
+    mpfr_t: number,
+    rndMode: mpfr_rnd_t,
+    radix: number,
+    val: string | number | Float | Rational | Integer
+  ) => {
+    if (typeof val === "string") {
+      const res = gmp.mpfr_set_string(mpfr_t, val, radix, rndMode);
       if (res !== 0) {
-        throw new Error('Invalid number provided!');
+        throw new Error("Invalid number provided!");
       }
       return;
     }
-    if (typeof val === 'number') {
+    if (typeof val === "number") {
       if (isInt32(val)) {
         gmp.mpfr_set_si(mpfr_t, val, rndMode);
         if (Object.is(val, -0)) {
@@ -822,22 +868,26 @@ export function getFloatContext(gmp: GMPFunctions, ctx: any, ctxOptions?: FloatO
       return;
     }
     if (isFloat(val)) {
-      gmp.mpfr_set(mpfr_t, (val as Float).mpfr_t, rndMode);
+      gmp.mpfr_set(mpfr_t, val.mpfr_t, rndMode);
       return;
     }
     if (isRational(val)) {
-      gmp.mpfr_set_q(mpfr_t, (val as Rational).mpq_t, rndMode);
+      gmp.mpfr_set_q(mpfr_t, val.mpq_t, rndMode);
       return;
     }
     if (isInteger(val)) {
-      gmp.mpfr_set_z(mpfr_t, (val as Integer).mpz_t, rndMode);
+      gmp.mpfr_set_z(mpfr_t, val.mpz_t, rndMode);
       return;
     }
     throw new Error(INVALID_PARAMETER_ERROR);
   };
 
-  const FloatFn = (val?: null | undefined | string | number | Float | Rational | Integer, options?: FloatOptions) => {
-    const rndMode = (options?.roundingMode ?? globalRndMode) as number as mpfr_rnd_t;
+  const FloatFn = (
+    val?: null | undefined | string | number | Float | Rational | Integer,
+    options?: FloatOptions
+  ) => {
+    const rndMode = (options?.roundingMode ??
+      globalRndMode) as number as mpfr_rnd_t;
     const precisionBits = options?.precisionBits ?? globalPrecisionBits;
     const radix = options?.radix ?? globalRadix;
     assertValidRadix(radix);
@@ -853,9 +903,15 @@ export function getFloatContext(gmp: GMPFunctions, ctx: any, ctxOptions?: FloatO
       setValue(instance.mpfr_t, rndMode, radix, val);
     }
 
-    mpfr_t_arr.push(instance.mpfr_t);
+    registry.register(instance, instance.mpfr_t);
+
     return instance;
   };
+
+  const registry = new FinalizationRegistry((mpfr_t: number) => {
+    gmp.mpfr_clear(mpfr_t);
+    gmp.mpfr_t_free(mpfr_t);
+  });
 
   return {
     Float: FloatFn,
@@ -863,13 +919,19 @@ export function getFloatContext(gmp: GMPFunctions, ctx: any, ctxOptions?: FloatO
 
     Pi: (options?: FloatOptions) => {
       const n = FloatFn(null, options);
-      gmp.mpfr_const_pi(n.mpfr_t, (options?.roundingMode ?? globalRndMode)  as mpfr_rnd_t);
+      gmp.mpfr_const_pi(
+        n.mpfr_t,
+        (options?.roundingMode ?? globalRndMode) as mpfr_rnd_t
+      );
       return n;
     },
 
     EulerConstant: (options?: FloatOptions) => {
       const n = FloatFn(null, options);
-      gmp.mpfr_const_euler(n.mpfr_t, (options?.roundingMode ?? globalRndMode)  as mpfr_rnd_t);
+      gmp.mpfr_const_euler(
+        n.mpfr_t,
+        (options?.roundingMode ?? globalRndMode) as mpfr_rnd_t
+      );
       return n;
     },
 
@@ -879,22 +941,20 @@ export function getFloatContext(gmp: GMPFunctions, ctx: any, ctxOptions?: FloatO
 
     Log2: (options?: FloatOptions) => {
       const n = FloatFn(null, options);
-      gmp.mpfr_const_log2(n.mpfr_t, (options?.roundingMode ?? globalRndMode)  as mpfr_rnd_t);
+      gmp.mpfr_const_log2(
+        n.mpfr_t,
+        (options?.roundingMode ?? globalRndMode) as mpfr_rnd_t
+      );
       return n;
     },
 
     Catalan: (options?: FloatOptions) => {
       const n = FloatFn(null, options);
-      gmp.mpfr_const_catalan(n.mpfr_t, (options?.roundingMode ?? globalRndMode)  as mpfr_rnd_t);
+      gmp.mpfr_const_catalan(
+        n.mpfr_t,
+        (options?.roundingMode ?? globalRndMode) as mpfr_rnd_t
+      );
       return n;
     },
-
-    destroy: () => {
-      for (let i = mpfr_t_arr.length - 1; i >= 0; i--) {
-        gmp.mpfr_clear(mpfr_t_arr[i]);
-        gmp.mpfr_t_free(mpfr_t_arr[i]);
-      }
-      mpfr_t_arr.length = 0;
-    }
   };
-};
+}

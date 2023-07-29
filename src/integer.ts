@@ -1,65 +1,72 @@
-import type { GMPFunctions } from './functions';
-import { Float } from './float';
-import { Rational } from './rational';
-import {assertArray, assertInt32, assertUint32, assertValidRadix} from './util';
+import { Float } from "./float";
+import { Rational } from "./rational";
+import {
+  assertArray,
+  assertInt32,
+  assertUint32,
+  assertValidRadix,
+} from "./util";
+import type { WasmInstance } from "./wasmInstance";
 
-type IntegerFactoryReturn = ReturnType<typeof getIntegerContext>['Integer'];
-export interface IntegerFactory extends IntegerFactoryReturn {};
+type IntegerFactoryReturn = ReturnType<typeof getIntegerContext>["Integer"];
+export interface IntegerFactory extends IntegerFactoryReturn {}
 type IntegerReturn = ReturnType<IntegerFactoryReturn>;
-export interface Integer extends IntegerReturn {};
+export interface Integer extends IntegerReturn {}
 
 // these should not be exported
 type AllTypes = Integer | Rational | Float | string | number;
-type OutputType<T> = 
-  T extends number ? Integer :
-  T extends Integer ? Integer :
-  T extends Rational ? Rational :
-  T extends Float ? Float :
-  never;
+type OutputType<T> = T extends number
+  ? Integer
+  : T extends Integer
+  ? Integer
+  : T extends Rational
+  ? Rational
+  : T extends Float
+  ? Float
+  : never;
 
 export enum DivMode {
   CEIL = 0,
   FLOOR = 1,
   TRUNCATE = 2,
-};
+}
 
-const INVALID_PARAMETER_ERROR = 'Invalid parameter!';
+const INVALID_PARAMETER_ERROR = "Invalid parameter!";
 
-export function getIntegerContext(gmp: GMPFunctions, ctx: any) {
-  const mpz_t_arr: number[] = [];
-
-  const isInteger = (val): boolean => ctx.intContext.isInteger(val);
-  const isRational = (val): boolean => ctx.rationalContext.isRational(val);
-  const isFloat = (val): boolean => ctx.floatContext.isFloat(val);
+export function getIntegerContext(gmp: WasmInstance, ctx: any) {
+  const isInteger = (val: any): val is Integer => ctx.intContext.isInteger(val);
+  const isRational = (val: any): val is Rational =>
+    ctx.rationalContext.isRational(val);
+  const isFloat = (val: any): val is Float => ctx.floatContext.isFloat(val);
 
   const compare = (mpz_t: number, val: AllTypes): number => {
-    if (typeof val === 'number') {
+    if (typeof val === "number") {
       assertInt32(val);
       return gmp.mpz_cmp_si(mpz_t, val);
     }
-    if (typeof val === 'string') {
+    if (typeof val === "string") {
       const i = IntegerFn(val);
       return gmp.mpz_cmp(mpz_t, i.mpz_t);
     }
     if (isInteger(val)) {
-      return gmp.mpz_cmp(mpz_t, (val as Integer).mpz_t);
+      return gmp.mpz_cmp(mpz_t, val.mpz_t);
     }
     if (isRational(val)) {
-      return -gmp.mpq_cmp_z((val as Rational).mpq_t, mpz_t);
+      return -gmp.mpq_cmp_z(val.mpq_t, mpz_t);
     }
     if (isFloat(val)) {
-      return -gmp.mpfr_cmp_z((val as Float).mpfr_t, mpz_t);
+      return -gmp.mpfr_cmp_z(val.mpfr_t, mpz_t);
     }
     throw new Error(INVALID_PARAMETER_ERROR);
-  }
+  };
 
   const IntPrototype = {
     mpz_t: 0,
-    type: 'integer',
+    type: "integer",
 
     /** Returns the sum of this number and the given one. */
     add<T extends AllTypes>(val: T): OutputType<T> {
-      if (typeof val === 'number') {
+      if (typeof val === "number") {
         assertInt32(val);
         const n = IntegerFn();
         if (val < 0) {
@@ -69,14 +76,14 @@ export function getIntegerContext(gmp: GMPFunctions, ctx: any) {
         }
         return n as OutputType<T>;
       }
-      if (typeof val === 'string') {
+      if (typeof val === "string") {
         const n = IntegerFn(val);
         gmp.mpz_add(n.mpz_t, this.mpz_t, n.mpz_t);
         return n as OutputType<T>;
       }
       if (isInteger(val)) {
         const n = IntegerFn();
-        gmp.mpz_add(n.mpz_t, this.mpz_t, (val as Integer).mpz_t);
+        gmp.mpz_add(n.mpz_t, this.mpz_t, val.mpz_t);
         return n as OutputType<T>;
       }
       if (isRational(val) || isFloat(val)) {
@@ -87,7 +94,7 @@ export function getIntegerContext(gmp: GMPFunctions, ctx: any) {
 
     /** Returns the difference of this number and the given one. */
     sub<T extends AllTypes>(val: T): OutputType<T> {
-      if (typeof val === 'number') {
+      if (typeof val === "number") {
         const n = IntegerFn();
         assertInt32(val);
         if (val < 0) {
@@ -97,14 +104,14 @@ export function getIntegerContext(gmp: GMPFunctions, ctx: any) {
         }
         return n as OutputType<T>;
       }
-      if (typeof val === 'string') {
+      if (typeof val === "string") {
         const n = IntegerFn(val);
         gmp.mpz_sub(n.mpz_t, this.mpz_t, n.mpz_t);
         return n as OutputType<T>;
       }
       if (isInteger(val)) {
         const n = IntegerFn();
-        gmp.mpz_sub(n.mpz_t, this.mpz_t, (val as Integer).mpz_t);
+        gmp.mpz_sub(n.mpz_t, this.mpz_t, val.mpz_t);
         return n as OutputType<T>;
       }
       if (isRational(val) || isFloat(val)) {
@@ -115,20 +122,20 @@ export function getIntegerContext(gmp: GMPFunctions, ctx: any) {
 
     /** Returns the product of this number and the given one. */
     mul<T extends AllTypes>(val: T): OutputType<T> {
-      if (typeof val === 'number') {
+      if (typeof val === "number") {
         const n = IntegerFn();
         assertInt32(val);
         gmp.mpz_mul_si(n.mpz_t, this.mpz_t, val);
         return n as OutputType<T>;
       }
-      if (typeof val === 'string') {
+      if (typeof val === "string") {
         const n = IntegerFn(val);
         gmp.mpz_mul(n.mpz_t, this.mpz_t, n.mpz_t);
         return n as OutputType<T>;
       }
       if (isInteger(val)) {
         const n = IntegerFn();
-        gmp.mpz_mul(n.mpz_t, this.mpz_t, (val as Integer).mpz_t);
+        gmp.mpz_mul(n.mpz_t, this.mpz_t, val.mpz_t);
         return n as OutputType<T>;
       }
       if (isRational(val) || isFloat(val)) {
@@ -153,7 +160,7 @@ export function getIntegerContext(gmp: GMPFunctions, ctx: any) {
 
     /** Returns the result of the division of this number by the given one. */
     div<T extends AllTypes>(val: T, mode = DivMode.CEIL): OutputType<T> {
-      if (typeof val === 'number') {
+      if (typeof val === "number") {
         const n = IntegerFn(this);
         assertInt32(val);
         if (val < 0) {
@@ -169,9 +176,9 @@ export function getIntegerContext(gmp: GMPFunctions, ctx: any) {
         }
         return n as OutputType<T>;
       }
-      if (typeof val === 'string' || isInteger(val)) {
+      if (typeof val === "string" || isInteger(val)) {
         const n = IntegerFn(this);
-        const intVal = typeof val === 'string' ? IntegerFn(val) : val as Integer;
+        const intVal = typeof val === "string" ? IntegerFn(val) : val;
 
         if (mode === DivMode.CEIL) {
           gmp.mpz_cdiv_q(n.mpz_t, this.mpz_t, intVal.mpz_t);
@@ -183,7 +190,7 @@ export function getIntegerContext(gmp: GMPFunctions, ctx: any) {
         return n as OutputType<T>;
       }
       if (isRational(val)) {
-        return (val as Rational).invert().mul(this) as OutputType<T>;
+        return val.invert().mul(this) as OutputType<T>;
       }
       if (isFloat(val)) {
         return ctx.floatContext.Float(this).div(val);
@@ -193,11 +200,11 @@ export function getIntegerContext(gmp: GMPFunctions, ctx: any) {
 
     /** Returns this number exponentiated to the given value. */
     pow(exp: Rational | Integer | number, mod?: Integer | number): Integer {
-      if (typeof exp === 'number') {
+      if (typeof exp === "number") {
         const n = IntegerFn();
         assertUint32(exp);
         if (mod !== undefined) {
-          if (typeof mod === 'number') {
+          if (typeof mod === "number") {
             assertUint32(mod);
             gmp.mpz_powm_ui(n.mpz_t, this.mpz_t, exp, IntegerFn(mod).mpz_t);
           } else {
@@ -211,11 +218,11 @@ export function getIntegerContext(gmp: GMPFunctions, ctx: any) {
       if (isInteger(exp)) {
         const n = IntegerFn();
         if (mod !== undefined) {
-          if (typeof mod === 'number') {
+          if (typeof mod === "number") {
             assertUint32(mod);
-            gmp.mpz_powm(n.mpz_t, this.mpz_t, (exp as Integer).mpz_t, IntegerFn(mod).mpz_t);
+            gmp.mpz_powm(n.mpz_t, this.mpz_t, exp.mpz_t, IntegerFn(mod).mpz_t);
           } else {
-            gmp.mpz_powm(n.mpz_t, this.mpz_t, (exp as Integer).mpz_t, mod.mpz_t);
+            gmp.mpz_powm(n.mpz_t, this.mpz_t, exp.mpz_t, mod.mpz_t);
           }
         } else {
           const expNum = exp.toNumber();
@@ -226,9 +233,9 @@ export function getIntegerContext(gmp: GMPFunctions, ctx: any) {
       }
       if (isRational(exp) && mod === undefined) {
         const n = IntegerFn();
-        const numerator = (exp as Rational).numerator().toNumber();
+        const numerator = exp.numerator().toNumber();
         assertUint32(numerator);
-        const denominator = (exp as Rational).denominator().toNumber();
+        const denominator = exp.denominator().toNumber();
         assertUint32(denominator);
         gmp.mpz_pow_ui(n.mpz_t, this.mpz_t, numerator);
         gmp.mpz_root(n.mpz_t, n.mpz_t, denominator);
@@ -255,7 +262,7 @@ export function getIntegerContext(gmp: GMPFunctions, ctx: any) {
     /** Returns the factorial */
     factorial(): Integer {
       if (gmp.mpz_fits_ulong_p(this.mpz_t) === 0) {
-        throw new Error('Out of bounds!');
+        throw new Error("Out of bounds!");
       }
       const n = IntegerFn();
       const value = gmp.mpz_get_ui(this.mpz_t);
@@ -266,7 +273,7 @@ export function getIntegerContext(gmp: GMPFunctions, ctx: any) {
     /** Returns the double factorial */
     doubleFactorial(): Integer {
       if (gmp.mpz_fits_ulong_p(this.mpz_t) === 0) {
-        throw new Error('Out of bounds!');
+        throw new Error("Out of bounds!");
       }
       const n = IntegerFn();
       const value = gmp.mpz_get_ui(this.mpz_t);
@@ -275,11 +282,11 @@ export function getIntegerContext(gmp: GMPFunctions, ctx: any) {
     },
 
     /** Determines whether a number is prime using some trial divisions, then reps Miller-Rabin probabilistic primality tests. */
-    isProbablyPrime(reps: number = 20): boolean | 'probably-prime' {
+    isProbablyPrime(reps: number = 20): boolean | "probably-prime" {
       assertUint32(reps);
       const ret = gmp.mpz_probab_prime_p(this.mpz_t, reps);
       if (ret === 0) return false; // definitely non-prime
-      if (ret === 1) return 'probably-prime';
+      if (ret === 1) return "probably-prime";
       if (ret === 2) return true; // definitely prime
     },
 
@@ -293,7 +300,7 @@ export function getIntegerContext(gmp: GMPFunctions, ctx: any) {
     /** Returns the greatest common divisor of this number and the given one. */
     gcd(val: Integer | number): Integer {
       const n = IntegerFn();
-      if (typeof val === 'number') {
+      if (typeof val === "number") {
         assertUint32(val);
         gmp.mpz_gcd_ui(n.mpz_t, this.mpz_t, val);
         return n;
@@ -308,7 +315,7 @@ export function getIntegerContext(gmp: GMPFunctions, ctx: any) {
     /** Returns the least common multiple of this number and the given one. */
     lcm(val: Integer | number): Integer {
       const n = IntegerFn();
-      if (typeof val === 'number') {
+      if (typeof val === "number") {
         assertUint32(val);
         gmp.mpz_lcm_ui(n.mpz_t, this.mpz_t, val);
         return n;
@@ -338,7 +345,7 @@ export function getIntegerContext(gmp: GMPFunctions, ctx: any) {
     /** Returns the integer bitwise-and combined with another integer. */
     and(val: Integer | number): Integer {
       const n = IntegerFn();
-      if (typeof val === 'number') {
+      if (typeof val === "number") {
         assertUint32(val);
         gmp.mpz_and(n.mpz_t, this.mpz_t, IntegerFn(val).mpz_t);
         return n;
@@ -353,7 +360,7 @@ export function getIntegerContext(gmp: GMPFunctions, ctx: any) {
     /** Returns the integer bitwise-or combined with another integer. */
     or(val: Integer | number): Integer {
       const n = IntegerFn();
-      if (typeof val === 'number') {
+      if (typeof val === "number") {
         assertUint32(val);
         gmp.mpz_ior(n.mpz_t, this.mpz_t, IntegerFn(val).mpz_t);
         return n;
@@ -368,7 +375,7 @@ export function getIntegerContext(gmp: GMPFunctions, ctx: any) {
     /** Returns the integer bitwise-xor combined with another integer. */
     xor(val: Integer | number): Integer {
       const n = IntegerFn();
-      if (typeof val === 'number') {
+      if (typeof val === "number") {
         assertUint32(val);
         gmp.mpz_xor(n.mpz_t, this.mpz_t, IntegerFn(val).mpz_t);
       } else {
@@ -405,7 +412,7 @@ export function getIntegerContext(gmp: GMPFunctions, ctx: any) {
     setBits(indices: number[]): Integer {
       const n = IntegerFn(this);
       assertArray(indices);
-      indices.forEach(i => {
+      indices.forEach((i) => {
         assertUint32(i);
         gmp.mpz_setbit(n.mpz_t, i);
       });
@@ -424,7 +431,7 @@ export function getIntegerContext(gmp: GMPFunctions, ctx: any) {
     clearBits(indices: number[]): Integer {
       const n = IntegerFn(this);
       assertArray(indices);
-      indices.forEach(i => {
+      indices.forEach((i) => {
         assertUint32(i);
         gmp.mpz_clrbit(n.mpz_t, i);
       });
@@ -443,7 +450,7 @@ export function getIntegerContext(gmp: GMPFunctions, ctx: any) {
     flipBits(indices: number[]): Integer {
       const n = IntegerFn(this);
       assertArray(indices);
-      indices.forEach(i => {
+      indices.forEach((i) => {
         assertUint32(i);
         gmp.mpz_combit(n.mpz_t, i);
       });
@@ -488,7 +495,7 @@ export function getIntegerContext(gmp: GMPFunctions, ctx: any) {
     /** Creates new integer with the copy of binary representation of num to position offset. Optionally bitCount can be used to zero-pad the number to a specific number of bits. The least significant bit is number 0 */
     writeTo(num: Integer, offset = 0, bitCount?: number): Integer {
       assertUint32(offset);
-      if (!isInteger(num)) throw new Error('Only Integers are supported');
+      if (!isInteger(num)) throw new Error("Only Integers are supported");
       if (bitCount === undefined) {
         bitCount = gmp.mpz_sizeinbase(num.mpz_t, 2);
       }
@@ -544,21 +551,29 @@ export function getIntegerContext(gmp: GMPFunctions, ctx: any) {
     },
 
     /** Exports integer into an Uint8Array. Sign is ignored. */
-    toBuffer(littleEndian = false): Uint8Array {
-      const countPtr = gmp.malloc(4);
-      const startptr = gmp.mpz_export(0, countPtr, littleEndian ? -1 : 1, 1, 1, 0, this.mpz_t);
-      const size = gmp.memView.getUint32(countPtr, true);
-      const endptr = startptr + size;
-      const buf = gmp.mem.slice(startptr, endptr);
-      gmp.free(startptr);
-      gmp.free(countPtr);
-      return buf;
-    },
+    // toBuffer(littleEndian = false): Uint8Array {
+    //   const countPtr = gmp.malloc(4);
+    //   const startptr = gmp.mpz_export(
+    //     0,
+    //     countPtr,
+    //     littleEndian ? -1 : 1,
+    //     1,
+    //     1,
+    //     0,
+    //     this.mpz_t
+    //   );
+    //   const size = gmp.memView.getUint32(countPtr, true);
+    //   const endptr = startptr + size;
+    //   const buf = gmp.mem.slice(startptr, endptr);
+    //   gmp.free(startptr);
+    //   gmp.free(countPtr);
+    //   return buf;
+    // },
 
     /** Converts the number to string */
     toString(radix: number = 10): string {
       if (!Number.isSafeInteger(radix) || radix < 2 || radix > 62) {
-        throw new Error('radix must have a value between 2 and 62');
+        throw new Error("radix must have a value between 2 and 62");
       }
       return gmp.mpz_to_string(this.mpz_t, radix);
     },
@@ -574,58 +589,60 @@ export function getIntegerContext(gmp: GMPFunctions, ctx: any) {
     },
   };
 
-  const IntegerFn = (num?: string | number | Integer | Uint8Array | Rational | Float, radix: number = 10) => {
+  const IntegerFn = (
+    num?: string | number | Integer | Uint8Array | Rational | Float,
+    radix: number = 10
+  ) => {
     const instance = Object.create(IntPrototype) as typeof IntPrototype;
     instance.mpz_t = gmp.mpz_t();
 
     if (num === undefined) {
       gmp.mpz_init(instance.mpz_t);
-    } else if (typeof num === 'string') {
+    } else if (typeof num === "string") {
       assertValidRadix(radix);
       const res = gmp.mpz_init_set_string(instance.mpz_t, num, radix);
       if (res !== 0) {
-        throw new Error('Invalid number provided!');
+        throw new Error("Invalid number provided!");
       }
-    } else if (typeof num === 'number') {
+    } else if (typeof num === "number") {
       assertInt32(num);
       gmp.mpz_init_set_si(instance.mpz_t, num);
     } else if (isInteger(num)) {
-      gmp.mpz_init_set(instance.mpz_t, (num as Integer).mpz_t);
-    } else if (ArrayBuffer.isView(num)) {
-      if (!(num instanceof Uint8Array)) {
-        throw new Error('Only Uint8Array is supported!');
-      }
-      gmp.mpz_init(instance.mpz_t);
-      const wasmBufPtr = gmp.malloc(num.length);
-      gmp.mem.set(num, wasmBufPtr);
-      gmp.mpz_import(instance.mpz_t, num.length, 1, 1, 1, 0, wasmBufPtr);
-      gmp.free(wasmBufPtr);
+      gmp.mpz_init_set(instance.mpz_t, num.mpz_t);
     } else if (isRational(num)) {
       gmp.mpz_init(instance.mpz_t);
       const f = ctx.floatContext.Float(num);
       gmp.mpfr_get_z(instance.mpz_t, f.mpfr_t, 0);
     } else if (isFloat(num)) {
       gmp.mpz_init(instance.mpz_t);
-      gmp.mpfr_get_z(instance.mpz_t, (num as Float).mpfr_t, (num as Float).rndMode);
+      gmp.mpfr_get_z(instance.mpz_t, num.mpfr_t, num.rndMode);
+    } else if (ArrayBuffer.isView(num)) {
+      throw new Error("Array buffer not supported yet!");
+      // if (!(num instanceof Uint8Array)) {
+      //   throw new Error("Only Uint8Array is supported!");
+      // }
+      // gmp.mpz_init(instance.mpz_t);
+      // const wasmBufPtr = gmp.malloc(num.length);
+      // gmp.mem.set(num, wasmBufPtr);
+      // gmp.mpz_import(instance.mpz_t, num.length, 1, 1, 1, 0, wasmBufPtr);
+      // gmp.free(wasmBufPtr);
     } else {
       gmp.mpz_t_free(instance.mpz_t);
-      throw new Error('Invalid value for the Integer type!');
+      throw new Error("Invalid value for the Integer type!");
     }
 
-    mpz_t_arr.push(instance.mpz_t);
+    registry.register(instance, instance.mpz_t);
 
     return instance;
   };
 
+  const registry = new FinalizationRegistry((mpz_t: number) => {
+    gmp.mpz_clear(mpz_t);
+    gmp.mpz_t_free(mpz_t);
+  });
+
   return {
     Integer: IntegerFn,
     isInteger: (val) => IntPrototype.isPrototypeOf(val),
-    destroy: () => {
-      for (let i = mpz_t_arr.length - 1; i >= 0; i--) {
-        gmp.mpz_clear(mpz_t_arr[i]);
-        gmp.mpz_t_free(mpz_t_arr[i]);
-      }
-      mpz_t_arr.length = 0;
-    }
   };
-};
+}
