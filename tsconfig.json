@@ -2,7 +2,7 @@
   "compilerOptions": {
     "target": "ES6",
     "module": "esnext",
-    "lib": ["ES2023", "dom"],
+    "lib": ["es2022", "dom"],
     "baseUrl": ".",
     "strict": false,
     "esModuleInterop": true,

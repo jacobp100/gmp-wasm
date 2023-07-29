@@ -9,7 +9,7 @@ import { DivMode, Integer, IntegerFactory, getIntegerContext } from "./integer";
 import { Rational, RationalFactory, getRationalContext } from "./rational";
 import type { WasmInstance } from "./wasmInstance";
 
-export type * from "./bindingTypes";
+export * from "./bindingTypes";
 export { DivMode, FloatRoundingMode };
 
 export type {
