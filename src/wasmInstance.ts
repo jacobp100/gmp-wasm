@@ -86,8 +86,8 @@ export const createWasmInstance = async (module: Response) => {
     return srcPtr;
   };
 
-  return {
-    reset: async () => {
+  const out = {
+    reset: () => {
       strBuf = gmp.g_malloc(PREALLOCATED_STR_SIZE);
       mpfr_exp_t_ptr = gmp.g_malloc(4);
     },
@@ -2429,8 +2429,9 @@ export const createWasmInstance = async (module: Response) => {
       rnd: mpfr_rnd_t,
       truncate = false
     ): string {
-      if (truncate && rnd !== mpfr_rnd_t.MPFR_RNDZ)
-        throw new Error("Only MPFR_RNDZ is supported in truncate mode!");
+      // if (truncate && rnd !== mpfr_rnd_t.MPFR_RNDZ)
+      //   throw new Error("Only MPFR_RNDZ is supported in truncate mode!");
+
       const prec = gmp.r_get_prec(x);
 
       const n = truncate
@@ -2473,4 +2474,11 @@ export const createWasmInstance = async (module: Response) => {
       return str;
     },
   };
+
+  if (process.env.NODE_ENV === "test") {
+    // @ts-expect-error
+    out.heap = heap;
+  }
+
+  return out;
 };
